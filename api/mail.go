@@ -10,8 +10,8 @@ import (
 	"time"
 )
 
-// Mailer sends login codes and notification emails. Without SMTP_HOST (local
-// dev) it only logs what it would send.
+// Mailer sends the login codes, the only emails Cotinha sends. Without
+// SMTP_HOST (local dev) it only logs what it would send.
 type Mailer struct {
 	cfg Config
 	log *slog.Logger

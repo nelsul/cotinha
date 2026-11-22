@@ -119,7 +119,6 @@ func run(log *slog.Logger) error {
 	}
 
 	app := &App{cfg: cfg, db: db, store: store, mail: NewMailer(cfg, log), log: log}
-	go app.emailWorker(ctx)
 	srv := &http.Server{
 		Addr:              cfg.Addr,
 		Handler:           app.routes(),

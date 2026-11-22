@@ -12,7 +12,7 @@ Live at **https://cotinha.nelsul.com**. Dark only, mobile first. The app's inter
 - **Paying (MVP):** the debtor pays by Pix straight to the creditor's key (the app shows a QR and a copy-paste code with the amount), attaches a receipt and marks it as paid. The payment stays `pending` until the **creditor confirms** it. Partial payments are allowed.
 - **Compensation:** when two people owe each other, one tap cancels the smaller amount on both sides.
 - **History and statistics:** `/cotinhas` lists every cotinha (open, settled, search). Each person can leave a cotinha out of their own statistics. The creator can delete a cotinha while nobody has paid towards it; participants are notified.
-- **Notifications** appear in the app (`/notificacoes`) and are emailed by a background worker in the API. Gmail allows about 500 emails per rolling 24 h on a free account, so notification emails stop at 400 a day (450 minus 50 kept for login codes) and the rest wait. Each person can turn emails off in their profile.
+- **Notifications** live in the app (`/notificacoes`, the bell on the home screen). The only emails Cotinha sends are login codes.
 - Ready for later: `payments.method` already accepts `pix_auto`, `debit`, `credit` and `apple_pay`, with `fee_cents`, `provider`, `provider_ref` and `confirmed_by = webhook`. The receiver always gets the exact amount; any fee is added on top for the payer.
 
 ## Stack

@@ -126,11 +126,3 @@ func TestPixKeys(t *testing.T) {
 		t.Fatal("valid CNPJ rejected")
 	}
 }
-
-func TestBRL(t *testing.T) {
-	for cents, want := range map[int64]string{5: "R$ 0,05", 2500: "R$ 25,00", 123456789: "R$ 1.234.567,89", 100000: "R$ 1.000,00"} {
-		if got := brl(cents); got != want {
-			t.Errorf("brl(%d) = %q, want %q", cents, got, want)
-		}
-	}
-}

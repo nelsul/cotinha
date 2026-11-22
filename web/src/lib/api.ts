@@ -55,7 +55,6 @@ export interface Me extends PublicUser {
 	pix_key_type: string;
 	pix_key: string;
 	onboarded: boolean;
-	email_notifications: boolean;
 }
 
 export interface Balance {

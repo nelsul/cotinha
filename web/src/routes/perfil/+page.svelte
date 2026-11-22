@@ -66,18 +66,6 @@
 		}
 	}
 
-	let savingEmail = $state(false);
-	async function toggleEmail() {
-		savingEmail = true;
-		try {
-			session.me = await api.patch<Me>('/me', { email_notifications: !me.email_notifications });
-		} catch (err) {
-			error = err instanceof ApiError ? err.message : 'Algo deu errado.';
-		} finally {
-			savingEmail = false;
-		}
-	}
-
 	async function logout() {
 		await api.post('/auth/logout').catch(() => {});
 		location.href = '/login';
@@ -125,10 +113,6 @@
 			</button>
 		</section>
 		<section class="card group">
-			<button class="item" role="switch" aria-checked={me.email_notifications} onclick={toggleEmail} disabled={savingEmail}>
-				<div><span>Avisos por e-mail</span><span class="muted small">Um e-mail para cada notificação</span></div>
-				<span class="switch" class:on={me.email_notifications} aria-hidden="true"><span></span></span>
-			</button>
 			<a class="item" href="/cotinhas"><span>Histórico de cotinhas</span><Icon name="chevron" size={18} /></a>
 			<a class="item" href="/qr"><span>Meu QR de amizade</span><Icon name="chevron" size={18} /></a>
 			<a class="item" href="/amigos"><span>Amigos e pedidos bloqueados</span><Icon name="chevron" size={18} /></a>
@@ -211,31 +195,6 @@
 	.item strong {
 		font-size: 16px;
 		font-weight: 600;
-	}
-	.switch {
-		width: 48px;
-		height: 28px;
-		border-radius: 14px;
-		background: var(--line-3);
-		flex-shrink: 0;
-		position: relative;
-	}
-	.switch span {
-		position: absolute;
-		top: 3px;
-		left: 3px;
-		width: 22px;
-		height: 22px;
-		border-radius: 11px;
-		background: var(--text);
-		transition: transform 0.15s;
-	}
-	.switch.on {
-		background: var(--accent);
-	}
-	.switch.on span {
-		transform: translateX(20px);
-		background: var(--accent-ink);
 	}
 	.out {
 		color: var(--warn);
