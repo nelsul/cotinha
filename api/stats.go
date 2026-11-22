@@ -6,6 +6,15 @@ import (
 	"time"
 )
 
+// countedPayments is every confirmed payment's part in each cotinha ($1 = the
+// user, $2 = period start), without compensations and without the cotinhas the
+// user hid from their statistics. Use it as "FROM countedPayments p".
+const countedPayments = `(
+	SELECT p.payer_id, p.payee_id, pa.amount_cents, pa.cotinha_id, p.created_at, p.decided_at
+	FROM payments p JOIN payment_allocations pa ON pa.payment_id = p.id
+	WHERE p.status = 'confirmed' AND p.method <> 'compensation' AND p.decided_at >= $2
+	AND NOT EXISTS (SELECT 1 FROM cotinha_stats_hidden h WHERE h.user_id = $1 AND h.cotinha_id = pa.cotinha_id))`
+
 type StatRow struct {
 	User  PublicUser `json:"user"`
 	Cents int64      `json:"cents"`
@@ -17,7 +26,8 @@ type PaySpeed struct {
 }
 
 // handleStats summarises money moved in a period (month, year or all).
-// Compensations are not counted as money sent or received.
+// Compensations are not counted as money sent or received, and cotinhas the
+// user hid from their statistics are left out everywhere.
 func (a *App) handleStats(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	me := currentUser(ctx)
@@ -35,13 +45,13 @@ func (a *App) handleStats(w http.ResponseWriter, r *http.Request) {
 	err := a.db.QueryRow(ctx, `SELECT
 		coalesce(sum(amount_cents) FILTER (WHERE payer_id = $1), 0),
 		coalesce(sum(amount_cents) FILTER (WHERE payee_id = $1), 0)
-		FROM payments WHERE status = 'confirmed' AND method <> 'compensation'
-		AND (payer_id = $1 OR payee_id = $1) AND decided_at >= $2`, me, since).Scan(&sent, &received)
+		FROM `+countedPayments+` p WHERE payer_id = $1 OR payee_id = $1`, me, since).Scan(&sent, &received)
 	if err != nil {
 		a.serverError(w, r, err)
 		return
 	}
-	if err := a.db.QueryRow(ctx, `SELECT count(*) FROM cotinhas WHERE creditor_id = $1 AND created_at >= $2`, me, since).Scan(&created); err != nil {
+	if err := a.db.QueryRow(ctx, `SELECT count(*) FROM cotinhas c WHERE creditor_id = $1 AND created_at >= $2
+		AND NOT EXISTS (SELECT 1 FROM cotinha_stats_hidden h WHERE h.user_id = $1 AND h.cotinha_id = c.id)`, me, since).Scan(&created); err != nil {
 		a.serverError(w, r, err)
 		return
 	}
@@ -75,39 +85,57 @@ func (a *App) handleStats(w http.ResponseWriter, r *http.Request) {
 		}
 		return out, nil
 	}
-	sentTo, err := top(`SELECT payee_id, sum(amount_cents) FROM payments
-		WHERE payer_id = $1 AND status = 'confirmed' AND method <> 'compensation' AND decided_at >= $2
-		GROUP BY payee_id ORDER BY 2 DESC LIMIT 5`)
+	sentTo, err := top(`SELECT payee_id, sum(amount_cents) FROM ` + countedPayments + ` p
+		WHERE payer_id = $1 GROUP BY payee_id ORDER BY 2 DESC LIMIT 5`)
 	if err != nil {
 		a.serverError(w, r, err)
 		return
 	}
-	paidMe, err := top(`SELECT payer_id, sum(amount_cents) FROM payments
-		WHERE payee_id = $1 AND status = 'confirmed' AND method <> 'compensation' AND decided_at >= $2
-		GROUP BY payer_id ORDER BY 2 DESC LIMIT 5`)
+	paidMe, err := top(`SELECT payer_id, sum(amount_cents) FROM ` + countedPayments + ` p
+		WHERE payee_id = $1 GROUP BY payer_id ORDER BY 2 DESC LIMIT 5`)
 	if err != nil {
 		a.serverError(w, r, err)
 		return
 	}
 
-	bal, err := a.pairBalances(ctx, me)
+	// What friends still owe me, leaving out hidden cotinhas.
+	shares, err := sharesInvolving(ctx, a.db, me)
 	if err != nil {
 		a.serverError(w, r, err)
 		return
 	}
+	hidden := map[string]bool{}
+	hrows, err := a.db.Query(ctx, `SELECT cotinha_id FROM cotinha_stats_hidden WHERE user_id = $1`, me)
+	if err != nil {
+		a.serverError(w, r, err)
+		return
+	}
+	for hrows.Next() {
+		var id string
+		if err := hrows.Scan(&id); err != nil {
+			hrows.Close()
+			a.serverError(w, r, err)
+			return
+		}
+		hidden[id] = true
+	}
+	hrows.Close()
+	owed := map[string]int64{}
+	for _, sh := range shares {
+		if sh.CreditorID == me && !hidden[sh.CotinhaID] && sh.Remaining() > 0 {
+			owed[sh.DebtorID] += sh.Remaining()
+		}
+	}
 	owesMe := []StatRow{}
 	var toReceive int64
-	for id, b := range bal {
-		if b.TheyOwe <= 0 {
-			continue
-		}
+	for id, cents := range owed {
 		u, err := a.userByID(ctx, id)
 		if err != nil {
 			a.serverError(w, r, err)
 			return
 		}
-		owesMe = append(owesMe, StatRow{u, b.TheyOwe})
-		toReceive += b.TheyOwe
+		owesMe = append(owesMe, StatRow{u, cents})
+		toReceive += cents
 	}
 	sort.Slice(owesMe, func(i, j int) bool { return owesMe[i].Cents > owesMe[j].Cents })
 	if len(owesMe) > 5 {
@@ -121,6 +149,7 @@ func (a *App) handleStats(w http.ResponseWriter, r *http.Request) {
 		JOIN payment_allocations pa ON pa.payment_id = p.id
 		JOIN cotinhas c ON c.id = pa.cotinha_id
 		WHERE p.payee_id = $1 AND p.status = 'confirmed' AND p.method <> 'compensation'
+		AND NOT EXISTS (SELECT 1 FROM cotinha_stats_hidden h WHERE h.user_id = $1 AND h.cotinha_id = c.id)
 		GROUP BY p.payer_id ORDER BY 2`, me)
 	if err != nil {
 		a.serverError(w, r, err)

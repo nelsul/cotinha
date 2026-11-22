@@ -113,6 +113,7 @@
 			</button>
 		</section>
 		<section class="card group">
+			<a class="item" href="/cotinhas"><span>Histórico de cotinhas</span><Icon name="chevron" size={18} /></a>
 			<a class="item" href="/qr"><span>Meu QR de amizade</span><Icon name="chevron" size={18} /></a>
 			<a class="item" href="/amigos"><span>Amigos e pedidos bloqueados</span><Icon name="chevron" size={18} /></a>
 			<div class="item"><span>E-mail</span><span class="muted">{me.email}</span></div>

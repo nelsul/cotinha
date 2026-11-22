@@ -4,11 +4,16 @@
 	import { firstName, money, shortDate } from '$lib/format';
 	import { appendImage, compressImage } from '$lib/image';
 	import { session } from '$lib/session.svelte';
+	import { goto } from '$app/navigation';
 	import Avatar from '$lib/components/Avatar.svelte';
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import Header from '$lib/components/Header.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 
 	interface Detail {
+		hidden_from_stats: boolean;
+		can_delete: boolean;
+		has_payments: boolean;
 		cotinha: { id: string; title: string; description: string; total_cents: number; split_mode: string; created_at: string };
 		creditor: PublicUser;
 		shares: {
@@ -31,6 +36,9 @@
 	let error = $state('');
 	let viewing = $state<string | null>(null);
 	let uploading = $state(false);
+	let confirmDelete = $state(false);
+	let deleting = $state(false);
+	let savingHidden = $state(false);
 	const me = session.me!;
 	const id = $derived(page.params.id);
 
@@ -87,10 +95,37 @@
 		if (h.status === 'rejected') return mine ? `Seu pagamento de ${amount} foi recusado` : `Pagamento de ${amount} de ${who} foi recusado`;
 		return mine ? `Seu pagamento de ${amount} foi confirmado` : `Pagamento de ${amount} de ${who} confirmado`;
 	}
+
+	async function remove() {
+		deleting = true;
+		try {
+			await api.del(`/cotinhas/${id}`);
+			await goto('/cotinhas', { replaceState: true });
+		} catch (e) {
+			error = (e as Error).message;
+			confirmDelete = false;
+		} finally {
+			deleting = false;
+		}
+	}
+
+	async function toggleHidden() {
+		if (!d) return;
+		savingHidden = true;
+		const next = !d.hidden_from_stats;
+		try {
+			await api.put(`/cotinhas/${id}/stats-hidden`, { hidden: next });
+			d.hidden_from_stats = next;
+		} catch (e) {
+			error = (e as Error).message;
+		} finally {
+			savingHidden = false;
+		}
+	}
 </script>
 
 <main class="page no-nav">
-	<Header title="" back="/" />
+	<Header title="" back="/cotinhas" />
 	{#if error}<div class="error" role="alert">{error}</div>{/if}
 
 	{#if d}
@@ -183,8 +218,35 @@
 				{/each}
 			</section>
 		{/if}
+
+		<section class="card options">
+			<button class="option" role="switch" aria-checked={!d.hidden_from_stats} onclick={toggleHidden} disabled={savingHidden}>
+				<span class="text">
+					<strong>Contar nas minhas estatísticas</strong>
+					<span class="muted small">Só muda as suas estatísticas, não as dos outros.</span>
+				</span>
+				<span class="switch" class:on={!d.hidden_from_stats} aria-hidden="true"><span></span></span>
+			</button>
+			{#if isCreditor}
+				<button class="option danger" onclick={() => (confirmDelete = true)} disabled={!d.can_delete}>
+					<span class="text">
+						<strong>Apagar cotinha</strong>
+						<span class="muted small">
+							{d.can_delete ? 'Some para todo mundo que participa.' : 'Não dá para apagar: já tem pagamentos registrados.'}
+						</span>
+					</span>
+					<Icon name="trash" size={20} />
+				</button>
+			{/if}
+		</section>
 	{/if}
 </main>
+
+{#if confirmDelete && d}
+	<ConfirmDialog title="Apagar “{d.cotinha.title}”?" confirmLabel="Apagar" danger busy={deleting} onconfirm={remove} oncancel={() => (confirmDelete = false)}>
+		A cotinha, as fotos e as partes de cada um somem para todos os participantes, que recebem um aviso. Isso não pode ser desfeito.
+	</ConfirmDialog>
+{/if}
 
 {#if viewing}
 	<button class="viewer" onclick={() => (viewing = null)} aria-label="Fechar foto"><img src={viewing} alt="" /></button>
@@ -329,6 +391,61 @@
 	.share-amount {
 		font-weight: 800;
 		font-size: 15px;
+	}
+	.options {
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+	}
+	.option {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 14px;
+		padding: 16px;
+		border: none;
+		background: none;
+		color: var(--text);
+		text-align: left;
+		width: 100%;
+		border-bottom: 1px solid var(--line);
+	}
+	.option:last-child {
+		border-bottom: none;
+	}
+	.option .text {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+	.option.danger {
+		color: var(--owe);
+	}
+	.switch {
+		width: 48px;
+		height: 28px;
+		border-radius: 14px;
+		background: var(--line-3);
+		flex-shrink: 0;
+		position: relative;
+		transition: background 0.15s;
+	}
+	.switch span {
+		position: absolute;
+		top: 3px;
+		left: 3px;
+		width: 22px;
+		height: 22px;
+		border-radius: 11px;
+		background: var(--text);
+		transition: transform 0.15s;
+	}
+	.switch.on {
+		background: var(--accent);
+	}
+	.switch.on span {
+		transform: translateX(20px);
+		background: var(--accent-ink);
 	}
 	.chip.done {
 		color: var(--accent);

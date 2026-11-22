@@ -41,6 +41,8 @@
 				return `${who} aceitou seu pedido de amizade.`;
 			case 'cotinha_added':
 				return `${who} criou “${n.cotinha_title}”: sua parte é ${amount}.`;
+			case 'cotinha_deleted':
+				return `${who} apagou a cotinha “${n.cotinha_title}”. Você não deve mais os ${amount} dela.`;
 			case 'payment_sent':
 				return `${who} diz que te pagou ${amount}${n.cotinha_title ? ` (${n.cotinha_title})` : ''}. Confira e confirme.`;
 			case 'payment_confirmed':
@@ -60,6 +62,8 @@
 				return '/amigos';
 			case 'cotinha_added':
 				return `/cotinha/${n.cotinha_id}`;
+			case 'cotinha_deleted':
+				return '/cotinhas';
 			case 'compensated':
 				return n.actor ? `/pagar/${n.actor.id}` : '/';
 			default:
@@ -73,6 +77,7 @@
 		payment_rejected: 'close',
 		compensated: 'swap',
 		cotinha_added: 'plus',
+		cotinha_deleted: 'trash',
 		friend_request: 'friends',
 		friend_accepted: 'friends'
 	};

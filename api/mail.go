@@ -4,12 +4,14 @@ import (
 	"crypto/tls"
 	"fmt"
 	"log/slog"
+	"mime"
 	"net/smtp"
 	"strings"
 	"time"
 )
 
-// Mailer sends login codes. Without SMTP_HOST (local dev) it logs the code instead.
+// Mailer sends the login codes, the only emails Cotinha sends. Without
+// SMTP_HOST (local dev) it only logs what it would send.
 type Mailer struct {
 	cfg Config
 	log *slog.Logger
@@ -24,10 +26,19 @@ func (m *Mailer) SendCode(to, code string) error {
 	}
 	subject := "Seu código do Cotinha: " + code
 	body := fmt.Sprintf("Olá!\r\n\r\nSeu código para entrar no Cotinha é:\r\n\r\n    %s\r\n\r\nEle vale por 10 minutos. Se não foi você, ignore este e-mail.\r\n", code)
+	return m.Send(to, subject, body)
+}
+
+// Send delivers one plain-text email.
+func (m *Mailer) Send(to, subject, body string) error {
+	if m.cfg.SMTPHost == "" {
+		m.log.Info("DEV email (SMTP not configured)", "to", to, "subject", subject)
+		return nil
+	}
 	msg := strings.Join([]string{
 		"From: Cotinha <" + m.cfg.MailFrom + ">",
 		"To: " + to,
-		"Subject: " + subject,
+		"Subject: " + mime.QEncoding.Encode("utf-8", subject),
 		"Date: " + time.Now().Format(time.RFC1123Z),
 		"MIME-Version: 1.0",
 		"Content-Type: text/plain; charset=UTF-8",

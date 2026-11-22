@@ -231,6 +231,8 @@ func (a *App) routes() http.Handler {
 			r.Get("/cotinhas", a.handleListCotinhas)
 			r.Post("/cotinhas", a.handleCreateCotinha)
 			r.Get("/cotinhas/{id}", a.handleGetCotinha)
+			r.Delete("/cotinhas/{id}", a.handleDeleteCotinha)
+			r.Put("/cotinhas/{id}/stats-hidden", a.handleStatsHidden)
 			r.Post("/cotinhas/{id}/photos", a.handleUploadPhoto)
 			r.Delete("/cotinhas/{id}/photos/{photoId}", a.handleDeletePhoto)
 

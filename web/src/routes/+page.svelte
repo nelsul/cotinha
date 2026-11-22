@@ -99,9 +99,14 @@
 		{/each}
 	</section>
 
-	{#if cotinhas.length > 0}
-		<section class="list" aria-labelledby="abertas">
+	<section class="list" aria-labelledby="abertas">
+		<div class="head">
 			<h2 class="h2" id="abertas">Cotinhas em aberto</h2>
+			<a href="/cotinhas" class="more">Histórico</a>
+		</div>
+		{#if cotinhas.length === 0}
+			<p class="muted empty">Nenhuma cotinha em aberto.</p>
+		{/if}
 			{#each cotinhas as c (c.id)}
 				<a class="row" href="/cotinha/{c.id}">
 					{#if c.photo_url}
@@ -122,7 +127,6 @@
 				</a>
 			{/each}
 		</section>
-	{/if}
 </main>
 
 <style>
@@ -237,6 +241,18 @@
 		display: flex;
 		flex-direction: column;
 		gap: 10px;
+	}
+	.head {
+		display: flex;
+		justify-content: space-between;
+		align-items: baseline;
+	}
+	.more {
+		font-size: 14px;
+		font-weight: 600;
+		min-height: 44px;
+		display: inline-flex;
+		align-items: center;
 	}
 	.amount {
 		display: flex;
