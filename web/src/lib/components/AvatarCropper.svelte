@@ -1,13 +1,24 @@
 <script lang="ts">
 	import { AVATAR_SIZE, encodeCanvas, loadImage } from '$lib/image';
+	import Icon from './Icon.svelte';
 
-	// Shows the picked photo under a circle: drag to move, pinch or use the slider to zoom.
-	// What is inside the circle is exactly what becomes the profile picture.
+	// Shows the picked photo under a circle: drag to move, pinch or use the slider to zoom,
+	// and rotate or mirror it. What is inside the circle becomes the profile picture.
 	let { file, onsave, oncancel }: { file: File; onsave: (blob: Blob) => void | Promise<void>; oncancel: () => void } =
 		$props();
 
 	const V = 280; // viewport size in CSS px
-	let img = $state<HTMLImageElement | null>(null);
+	const WORK_MAX = 2048; // the rotated/mirrored copy never needs to be bigger than this
+	interface Source {
+		canvas: HTMLCanvasElement;
+		url: string;
+		w: number;
+		h: number;
+	}
+	let original: HTMLImageElement | null = null;
+	let src = $state<Source | null>(null);
+	let rotation = $state(0); // 0, 90, 180 or 270 degrees clockwise
+	let flipped = $state(false); // mirrored left-right
 	let error = $state('');
 	let zoom = $state(1); // 1 = the photo just covers the circle
 	let x = $state(0); // image top-left inside the viewport
@@ -23,27 +34,65 @@
 		return () => el.removeEventListener('wheel', wheel);
 	});
 
-	const base = $derived(img ? Math.max(V / img.naturalWidth, V / img.naturalHeight) : 1);
+	const base = $derived(src ? Math.max(V / src.w, V / src.h) : 1);
 	const s = $derived(base * zoom);
-	const w = $derived(img ? img.naturalWidth * s : 0);
-	const h = $derived(img ? img.naturalHeight * s : 0);
+	const w = $derived(src ? src.w * s : 0);
+	const h = $derived(src ? src.h * s : 0);
+
+	/** Draws the original photo rotated and mirrored into a working canvas, then recenters. */
+	async function rebuild() {
+		if (!original) return;
+		const ow = original.naturalWidth;
+		const oh = original.naturalHeight;
+		const k = Math.min(1, WORK_MAX / Math.max(ow, oh));
+		const dw = Math.round(ow * k);
+		const dh = Math.round(oh * k);
+		const sideways = rotation === 90 || rotation === 270;
+		const canvas = document.createElement('canvas');
+		canvas.width = sideways ? dh : dw;
+		canvas.height = sideways ? dw : dh;
+		const ctx = canvas.getContext('2d')!;
+		ctx.imageSmoothingQuality = 'high';
+		ctx.translate(canvas.width / 2, canvas.height / 2);
+		// Mirror first (in screen space), then rotate: "Espelhar" always flips left-right as seen.
+		if (flipped) ctx.scale(-1, 1);
+		ctx.rotate((rotation * Math.PI) / 180);
+		ctx.drawImage(original, -dw / 2, -dh / 2, dw, dh);
+		const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', 0.92));
+		if (!blob) return;
+		if (src) URL.revokeObjectURL(src.url);
+		src = { canvas, url: URL.createObjectURL(blob), w: canvas.width, h: canvas.height };
+		zoom = 1;
+		const b = Math.max(V / canvas.width, V / canvas.height);
+		x = (V - canvas.width * b) / 2;
+		y = (V - canvas.height * b) / 2;
+	}
 
 	$effect(() => {
 		let cancelled = false;
 		loadImage(file)
-			.then((i) => {
+			.then(async (i) => {
 				if (cancelled) return;
-				img = i;
-				const b = Math.max(V / i.naturalWidth, V / i.naturalHeight);
-				x = (V - i.naturalWidth * b) / 2;
-				y = (V - i.naturalHeight * b) / 2;
+				original = i;
+				await rebuild();
+				URL.revokeObjectURL(i.src);
 			})
 			.catch((e) => (error = e.message));
 		return () => {
 			cancelled = true;
-			if (img) URL.revokeObjectURL(img.src);
+			if (src) URL.revokeObjectURL(src.url);
 		};
 	});
+
+	function rotate() {
+		rotation = (rotation + 90) % 360;
+		rebuild();
+	}
+
+	function flip() {
+		flipped = !flipped;
+		rebuild();
+	}
 
 	function clamp() {
 		x = Math.min(0, Math.max(V - w, x));
@@ -124,14 +173,14 @@
 	}
 
 	async function save() {
-		if (!img) return;
+		if (!src) return;
 		saving = true;
 		try {
 			const canvas = document.createElement('canvas');
 			canvas.width = canvas.height = AVATAR_SIZE;
 			const ctx = canvas.getContext('2d')!;
 			ctx.imageSmoothingQuality = 'high';
-			ctx.drawImage(img, -x / s, -y / s, V / s, V / s, 0, 0, AVATAR_SIZE, AVATAR_SIZE);
+			ctx.drawImage(src.canvas, -x / s, -y / s, V / s, V / s, 0, 0, AVATAR_SIZE, AVATAR_SIZE);
 			await onsave(await encodeCanvas(canvas, 0.82));
 		} catch (e) {
 			error = (e as Error).message;
@@ -165,10 +214,15 @@
 				onpointercancel={up}
 				onkeydown={key}
 			>
-				{#if img}
-					<img src={img.src} alt="" draggable="false" style="width: {w}px; height: {h}px; transform: translate({x}px, {y}px)" />
+				{#if src}
+					<img src={src.url} alt="" draggable="false" style="width: {w}px; height: {h}px; transform: translate({x}px, {y}px)" />
 				{/if}
 				<div class="mask" aria-hidden="true"></div>
+			</div>
+
+			<div class="tools">
+				<button type="button" class="tool" onclick={rotate} disabled={!src}><Icon name="rotate" size={20} />Girar</button>
+				<button type="button" class="tool" class:on={flipped} aria-pressed={flipped} onclick={flip} disabled={!src}><Icon name="flip" size={20} />Espelhar</button>
 			</div>
 
 			<label class="zoom">
@@ -179,7 +233,7 @@
 
 		<div class="actions">
 			<button class="btn ghost" type="button" onclick={oncancel} disabled={saving}>Cancelar</button>
-			<button class="btn" type="button" onclick={save} disabled={!img || saving}>{saving ? 'Salvando…' : 'Usar foto'}</button>
+			<button class="btn" type="button" onclick={save} disabled={!src || saving}>{saving ? 'Salvando…' : 'Usar foto'}</button>
 		</div>
 	</div>
 </div>
@@ -203,7 +257,7 @@
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: 14px;
+		gap: 18px;
 	}
 	.sheet p {
 		margin: 0;
@@ -238,6 +292,29 @@
 		outline: 2px solid var(--accent);
 		outline-offset: -2px;
 		pointer-events: none;
+	}
+	.tools {
+		width: 100%;
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 10px;
+	}
+	.tool {
+		height: 48px;
+		border-radius: 24px;
+		border: 1px solid var(--line-3);
+		background: transparent;
+		color: var(--text);
+		font-weight: 600;
+		font-size: 15px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 8px;
+	}
+	.tool.on {
+		border-color: var(--accent);
+		color: var(--accent);
 	}
 	.zoom {
 		width: 100%;

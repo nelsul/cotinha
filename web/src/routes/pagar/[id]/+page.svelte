@@ -373,6 +373,6 @@
 	.list {
 		display: flex;
 		flex-direction: column;
-		gap: 8px;
+		gap: 10px;
 	}
 </style>
