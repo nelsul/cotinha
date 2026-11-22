@@ -1,0 +1,9 @@
+{
+  "name": "Cotinha",
+  "short_name": "Cotinha",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0B0F0D",
+  "theme_color": "#0B0F0D",
+  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

@@ -1,0 +1,8 @@
+.env
+.env.*
+!.env.example
+node_modules/
+web/build/
+web/.svelte-kit/
+api/cotinha
+.DS_Store
