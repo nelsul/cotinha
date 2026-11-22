@@ -88,8 +88,11 @@ func isHEIC(b []byte) bool {
 	if len(b) < 12 || string(b[4:8]) != "ftyp" {
 		return false
 	}
-	brand := string(b[8:12])
-	return brand == "heic" || brand == "heix" || brand == "mif1" || brand == "msf1"
+	switch string(b[8:12]) {
+	case "heic", "heix", "hevc", "hevx", "heim", "heis", "mif1", "msf1":
+		return true
+	}
+	return false
 }
 
 func (s *Storage) Put(ctx context.Context, prefix, ext, ctype string, data []byte) (string, error) {

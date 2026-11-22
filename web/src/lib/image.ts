@@ -31,15 +31,40 @@ export function loadImage(file: Blob): Promise<HTMLImageElement> {
 	});
 }
 
+/** HEIC/HEIF (iPhone and many Android cameras), by type, name or file header. */
+async function isHeif(file: Blob): Promise<boolean> {
+	if (/image\/hei[cf]/.test(file.type)) return true;
+	if (file instanceof File && /\.hei[cf]$/i.test(file.name)) return true;
+	const head = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+	const text = String.fromCharCode(...head);
+	return text.slice(4, 8) === 'ftyp' && ['heic', 'heix', 'hevc', 'hevx', 'heim', 'heis', 'mif1', 'msf1'].includes(text.slice(8, 12));
+}
+
+/**
+ * Loads a picture the browser can draw. Browsers other than Safari can't open
+ * HEIC/HEIF, so those are converted to JPEG first with a decoder that is only
+ * downloaded when needed.
+ */
+export async function loadAnyImage(file: Blob): Promise<HTMLImageElement> {
+	try {
+		return await loadImage(file);
+	} catch (err) {
+		if (!(await isHeif(file))) throw err;
+		const { default: heic2any } = await import('heic2any');
+		const out = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.92 });
+		return loadImage(Array.isArray(out) ? out[0] : out);
+	}
+}
+
 /**
  * Resizes a picture so its longest side is at most maxSide and re-encodes it.
- * Falls back to the original file when the browser can't decode it (e.g. HEIC
- * outside Safari); the API then handles it.
+ * Falls back to the original file only when it can't be decoded at all; the API
+ * then handles it.
  */
 export async function compressImage(file: File, maxSide = PHOTO_MAX, quality = 0.8): Promise<Blob> {
 	let img: HTMLImageElement;
 	try {
-		img = await loadImage(file);
+		img = await loadAnyImage(file);
 	} catch {
 		return file;
 	}
@@ -54,7 +79,8 @@ export async function compressImage(file: File, maxSide = PHOTO_MAX, quality = 0
 	ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 	URL.revokeObjectURL(img.src);
 	const out = await encodeCanvas(canvas, quality);
-	return scale === 1 && out.size >= file.size ? file : out;
+	const keepOriginal = scale === 1 && out.size >= file.size && !(await isHeif(file));
+	return keepOriginal ? file : out;
 }
 
 /** Adds a picture to a form with a filename matching its type. */

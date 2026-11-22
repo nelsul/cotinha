@@ -1,47 +1,112 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { api, ApiError, type PublicUser } from '$lib/api';
-	import { money, parseMoney } from '$lib/format';
+	import { clearDraft, loadDraft, saveDraft } from '$lib/draft';
+	import { money } from '$lib/format';
 	import { appendImage, compressImage } from '$lib/image';
 	import { session } from '$lib/session.svelte';
 	import Avatar from '$lib/components/Avatar.svelte';
 	import Header from '$lib/components/Header.svelte';
 	import Icon from '$lib/components/Icon.svelte';
+	import MoneyInput from '$lib/components/MoneyInput.svelte';
 
 	type Mode = 'equal' | 'amount' | 'weight';
 	interface Person {
 		user: PublicUser;
 		on: boolean;
-		amount: string;
+		amount: number; // cents
 		weight: number;
+	}
+	interface Draft {
+		title: string;
+		total: number;
+		description: string;
+		mode: Mode;
+		people: Record<string, { on: boolean; amount: number; weight: number }>;
+		photos: Blob[];
+		savedAt: number;
 	}
 
 	let title = $state('');
-	let totalText = $state('');
+	let total = $state(0);
 	let description = $state('');
 	let mode = $state<Mode>('equal');
 	let people = $state<Person[]>([]);
-	let photos = $state<{ file: File; url: string }[]>([]);
+	let photos = $state<{ file: Blob; url: string }[]>([]);
+	let preparing = $state(0); // photos being converted/shrunk right now
+	let search = $state('');
 	let busy = $state(false);
 	let error = $state('');
 	let loading = $state(true);
+	let restored = $state(false);
+	let ready = false; // drafts are only saved once the old one was loaded
 
 	const me = session.me!;
+	const draftKey = `nova:${me.id}`;
+	const SEARCH_FROM = 6; // show the friend search once the list gets long
 
 	async function load() {
 		try {
 			const friends = await api.get<PublicUser[]>('/friends');
-			people = [me, ...friends].map((u) => ({ user: u, on: u.id === me.id, amount: '', weight: 1 }));
+			people = [me, ...friends].map((u) => ({ user: u, on: u.id === me.id, amount: 0, weight: 1 }));
+			const d = await loadDraft<Draft>(draftKey);
+			if (d && (d.title || d.total || d.description || d.photos?.length || Object.values(d.people).some((x) => x.on))) {
+				title = d.title;
+				total = d.total;
+				description = d.description;
+				mode = d.mode;
+				for (const p of people) {
+					const saved = d.people[p.user.id];
+					if (saved) Object.assign(p, saved);
+				}
+				photos = (d.photos ?? []).map((file) => ({ file, url: URL.createObjectURL(file) }));
+				restored = true;
+			}
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {
 			loading = false;
+			ready = true;
 		}
 	}
 	load();
 
-	const total = $derived(parseMoney(totalText) ?? 0);
+	// Save the form as a draft whenever it changes (debounced).
+	$effect(() => {
+		const draft: Draft = {
+			title,
+			total,
+			description,
+			mode,
+			people: Object.fromEntries(people.map((p) => [p.user.id, { on: p.on, amount: p.amount, weight: p.weight }])),
+			photos: photos.map((p) => p.file),
+			savedAt: Date.now()
+		};
+		if (!ready || busy) return;
+		const t = setTimeout(() => saveDraft(draftKey, $state.snapshot(draft)), 400);
+		return () => clearTimeout(t);
+	});
+
+	async function discardDraft() {
+		await clearDraft(draftKey);
+		title = '';
+		total = 0;
+		description = '';
+		mode = 'equal';
+		photos = [];
+		for (const p of people) Object.assign(p, { on: p.user.id === me.id, amount: 0, weight: 1 });
+		restored = false;
+	}
+
 	const chosen = $derived(people.filter((p) => p.on));
+	const norm = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+	// You first, then whoever is already in, then the rest; the search never hides someone already in.
+	const visible = $derived.by(() => {
+		const q = norm(search.trim().replace(/^@/, ''));
+		const list = people.filter((p) => p.user.id === me.id || p.on || !q || norm(p.user.name).includes(q) || norm(p.user.handle).includes(q));
+		const rank = (p: Person) => (p.user.id === me.id ? 0 : p.on ? 1 : 2);
+		return list.sort((a, b) => rank(a) - rank(b) || a.user.name.localeCompare(b.user.name));
+	});
 
 	// Mirrors the API's split so the preview matches what will be saved.
 	const preview = $derived.by(() => {
@@ -52,7 +117,7 @@
 			const rem = total % n;
 			return chosen.map((_, i) => base + (i < rem ? 1 : 0));
 		}
-		if (mode === 'amount') return chosen.map((p) => parseMoney(p.amount) ?? 0);
+		if (mode === 'amount') return chosen.map((p) => p.amount);
 		const wsum = chosen.reduce((s, p) => s + p.weight, 0);
 		if (!wsum) return chosen.map(() => 0);
 		const exact = chosen.map((p) => (total * p.weight) / wsum);
@@ -68,13 +133,23 @@
 		title.trim() !== '' && total > 0 && chosen.some((p) => p.user.id !== me.id) && (mode !== 'amount' || previewSum === total)
 	);
 
-	function addPhotos(e: Event) {
+	// Photos are shrunk (and HEIC converted) as soon as they are picked, so the
+	// previews work on every phone and the draft stays small.
+	async function addPhotos(e: Event) {
 		const input = e.currentTarget as HTMLInputElement;
-		for (const file of Array.from(input.files ?? [])) {
-			if (photos.length >= 6) break;
-			photos.push({ file, url: URL.createObjectURL(file) });
-		}
+		const files = Array.from(input.files ?? []).slice(0, 6 - photos.length);
 		input.value = '';
+		preparing += files.length;
+		for (const file of files) {
+			try {
+				const blob = await compressImage(file);
+				if (photos.length < 6) photos.push({ file: blob, url: URL.createObjectURL(blob) });
+			} catch {
+				error = 'Não foi possível abrir uma das fotos.';
+			} finally {
+				preparing--;
+			}
+		}
 	}
 
 	async function create(e: SubmitEvent) {
@@ -90,12 +165,13 @@
 				split_mode: mode,
 				participants: chosen.map((p) => ({
 					user_id: p.user.id,
-					value: mode === 'amount' ? (parseMoney(p.amount) ?? 0) : mode === 'weight' ? p.weight : 0
+					value: mode === 'amount' ? p.amount : mode === 'weight' ? p.weight : 0
 				}))
 			});
+			await clearDraft(draftKey);
 			for (const p of photos) {
 				const form = new FormData();
-				appendImage(form, await compressImage(p.file));
+				appendImage(form, p.file);
 				await api.post(`/cotinhas/${id}/photos`, form).catch(() => {});
 			}
 			await goto(`/cotinha/${id}`, { replaceState: true });
@@ -109,6 +185,13 @@
 <main class="page no-nav">
 	<Header title="Nova cotinha" />
 
+	{#if restored}
+		<div class="draft">
+			<span>Continuando o rascunho que você deixou.</span>
+			<button type="button" onclick={discardDraft}>Descartar</button>
+		</div>
+	{/if}
+
 	<form onsubmit={create} class="form">
 		<section class="card main">
 			<div class="field">
@@ -117,7 +200,7 @@
 			</div>
 			<div class="field">
 				<label for="total">Valor total</label>
-				<input id="total" class="input total" inputmode="decimal" placeholder="R$ 0,00" required bind:value={totalText} />
+				<MoneyInput id="total" class="input total" required bind:cents={total} />
 			</div>
 			<p class="muted center">Pago por <span class="chip on">Você</span></p>
 		</section>
@@ -139,7 +222,10 @@
 						<button type="button" aria-label="Remover foto" onclick={() => photos.splice(i, 1)}><Icon name="close" size={14} stroke={3} /></button>
 					</div>
 				{/each}
-				{#if photos.length < 6}
+				{#if preparing > 0}
+					<div class="add-photo" aria-live="polite">Preparando…</div>
+				{/if}
+				{#if photos.length + preparing < 6}
 					<label class="add-photo">
 						<Icon name="camera" size={24} />
 						Adicionar
@@ -171,7 +257,14 @@
 			{:else if people.length === 1}
 				<p class="muted">Você ainda não tem amigos no Cotinha. <a href="/amigos">Adicione alguém</a> para dividir.</p>
 			{/if}
-			{#each people as p (p.user.id)}
+			{#if people.length > SEARCH_FROM}
+				<div class="search">
+					<Icon name="search" size={18} />
+					<input placeholder="Buscar amigo pelo nome ou @" aria-label="Buscar amigo" autocapitalize="none" bind:value={search} />
+					{#if search}<button type="button" aria-label="Limpar busca" onclick={() => (search = '')}><Icon name="close" size={16} /></button>{/if}
+				</div>
+			{/if}
+			{#each visible as p (p.user.id)}
 				{@const idx = chosen.indexOf(p)}
 				<div class="row person" class:off={!p.on}>
 					<div class="person-top">
@@ -190,7 +283,7 @@
 					{#if p.on && mode === 'amount'}
 						<div class="person-control">
 							<label class="muted" for="amount-{p.user.id}">Quanto consumiu</label>
-							<input id="amount-{p.user.id}" class="input mini" inputmode="decimal" placeholder="R$ 0,00" bind:value={p.amount} />
+							<MoneyInput id="amount-{p.user.id}" class="input mini" bind:cents={p.amount} />
 						</div>
 					{:else if p.on && mode === 'weight'}
 						<div class="person-control">
@@ -204,6 +297,9 @@
 					{/if}
 				</div>
 			{/each}
+			{#if search && visible.filter((p) => !p.on && p.user.id !== me.id).length === 0}
+				<p class="muted">Nenhum amigo com “{search}”.</p>
+			{/if}
 			<a class="add-friend" href="/amigos"><Icon name="plus" size={18} stroke={2.4} />Adicionar amigo</a>
 		</section>
 
@@ -216,12 +312,65 @@
 				<strong class="pos" style="font-size: 24px">{money(friendsOwe)}</strong>
 			</div>
 			{#if error}<div class="error" role="alert">{error}</div>{/if}
-			<button class="btn" disabled={!valid || busy}>{busy ? 'Criando…' : 'Criar cotinha'}</button>
+			<button class="btn" disabled={!valid || busy || preparing > 0}>{busy ? 'Criando…' : 'Criar cotinha'}</button>
 		</div>
 	</form>
 </main>
 
 <style>
+	.draft {
+		background: var(--note-bg);
+		border: 1px solid var(--note-line);
+		border-radius: 16px;
+		padding: 6px 6px 6px 14px;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 10px;
+		font-size: 14px;
+		color: var(--soft);
+	}
+	.draft button {
+		border: none;
+		background: none;
+		color: var(--accent);
+		font-weight: 700;
+		min-height: 44px;
+		padding: 0 10px;
+	}
+	.search {
+		height: 48px;
+		border-radius: 24px;
+		background: var(--surface);
+		border: 1px solid var(--line-2);
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 0 6px 0 16px;
+		color: var(--muted);
+	}
+	.search:focus-within {
+		border-color: var(--accent);
+	}
+	.search input {
+		flex: 1;
+		min-width: 0;
+		border: none;
+		background: transparent;
+		color: var(--text);
+		font-size: 16px;
+		outline: none;
+	}
+	.search button {
+		width: 40px;
+		height: 40px;
+		border: none;
+		background: none;
+		color: var(--muted);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
 	.form {
 		display: flex;
 		flex-direction: column;
@@ -232,7 +381,7 @@
 		flex-direction: column;
 		gap: 14px;
 	}
-	.total {
+	.main :global(input.total) {
 		font-size: 34px;
 		font-weight: 800;
 		height: 64px;
@@ -329,7 +478,7 @@
 		background: var(--accent);
 		border-color: var(--accent);
 	}
-	.mini {
+	.person :global(input.mini) {
 		width: 128px;
 		height: 44px;
 		text-align: right;

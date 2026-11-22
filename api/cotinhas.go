@@ -163,6 +163,12 @@ func (a *App) handleCreateCotinha(w http.ResponseWriter, r *http.Request) {
 			a.serverError(w, r, err)
 			return
 		}
+		if p.UserID != me && amounts[i] > 0 {
+			if err := notify(ctx, tx, p.UserID, "cotinha_added", me, id, "", amounts[i]); err != nil {
+				a.serverError(w, r, err)
+				return
+			}
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		a.serverError(w, r, err)
@@ -428,6 +434,16 @@ func (a *App) handleUploadPhoto(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 404, "Cotinha não encontrada.")
 		return
 	}
+	// Only whoever created the cotinha (the creditor) adds pictures.
+	var isCreditor bool
+	if err := a.db.QueryRow(ctx, `SELECT creditor_id = $2 FROM cotinhas WHERE id = $1`, id, me).Scan(&isCreditor); err != nil {
+		a.serverError(w, r, err)
+		return
+	}
+	if !isCreditor {
+		writeError(w, 403, "Só quem criou a cotinha pode adicionar fotos.")
+		return
+	}
 	var count int
 	if err := a.db.QueryRow(ctx, `SELECT count(*) FROM cotinha_photos WHERE cotinha_id = $1`, id).Scan(&count); err != nil {
 		a.serverError(w, r, err)
@@ -470,7 +486,7 @@ func (a *App) handleDeletePhoto(w http.ResponseWriter, r *http.Request) {
 	me := currentUser(ctx)
 	var key string
 	err := a.db.QueryRow(ctx, `DELETE FROM cotinha_photos p USING cotinhas c
-		WHERE p.id = $1 AND p.cotinha_id = $2 AND c.id = p.cotinha_id AND (p.uploaded_by = $3 OR c.creditor_id = $3)
+		WHERE p.id = $1 AND p.cotinha_id = $2 AND c.id = p.cotinha_id AND c.creditor_id = $3
 		RETURNING p.object_key`, photoID, id, me).Scan(&key)
 	if isNoRows(err) {
 		writeError(w, 404, "Foto não encontrada.")
