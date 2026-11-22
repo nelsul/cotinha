@@ -316,7 +316,7 @@
 	.list {
 		display: flex;
 		flex-direction: column;
-		gap: 8px;
+		gap: 10px;
 	}
 	.chip.done {
 		color: var(--accent);

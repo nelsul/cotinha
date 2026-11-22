@@ -174,25 +174,33 @@
 			{#each people as p (p.user.id)}
 				{@const idx = chosen.indexOf(p)}
 				<div class="row person" class:off={!p.on}>
-					<button type="button" class="tick" class:on={p.on} role="checkbox" aria-checked={p.on} aria-label="Incluir {p.user.name}" onclick={() => (p.on = !p.on)}>
-						{#if p.on}<Icon name="check" size={14} stroke={3.5} />{/if}
-					</button>
-					<Avatar user={p.user} size={36} />
-					<div class="grow">
-						<strong>{p.user.id === me.id ? 'Você' : p.user.name}</strong>
-						<span class="muted small">@{p.user.handle}</span>
+					<div class="person-top">
+						<button type="button" class="tick" class:on={p.on} role="checkbox" aria-checked={p.on} aria-label="Incluir {p.user.name}" onclick={() => (p.on = !p.on)}>
+							{#if p.on}<Icon name="check" size={14} stroke={3.5} />{/if}
+						</button>
+						<Avatar user={p.user} size={40} />
+						<div class="grow">
+							<strong>{p.user.id === me.id ? 'Você' : p.user.name}</strong>
+							<span class="muted small">@{p.user.handle}</span>
+						</div>
+						{#if p.on && mode !== 'amount'}
+							<strong class="share">{money(preview[idx] ?? 0)}</strong>
+						{/if}
 					</div>
 					{#if p.on && mode === 'amount'}
-						<input class="input mini" inputmode="decimal" placeholder="0,00" aria-label="Valor de {p.user.name}" bind:value={p.amount} />
-					{:else if p.on && mode === 'weight'}
-						<div class="stepper">
-							<button type="button" aria-label="Diminuir peso" onclick={() => (p.weight = Math.max(0, p.weight - 1))}>−</button>
-							<span>{p.weight}</span>
-							<button type="button" aria-label="Aumentar peso" onclick={() => (p.weight += 1)}>+</button>
+						<div class="person-control">
+							<label class="muted" for="amount-{p.user.id}">Quanto consumiu</label>
+							<input id="amount-{p.user.id}" class="input mini" inputmode="decimal" placeholder="R$ 0,00" bind:value={p.amount} />
 						</div>
-					{/if}
-					{#if p.on && mode !== 'amount'}
-						<strong class="share">{money(preview[idx] ?? 0)}</strong>
+					{:else if p.on && mode === 'weight'}
+						<div class="person-control">
+							<span class="muted">Peso</span>
+							<div class="stepper">
+								<button type="button" aria-label="Diminuir peso de {p.user.name}" onclick={() => (p.weight = Math.max(0, p.weight - 1))}>−</button>
+								<span>{p.weight}</span>
+								<button type="button" aria-label="Aumentar peso de {p.user.name}" onclick={() => (p.weight += 1)}>+</button>
+							</div>
+						</div>
 					{/if}
 				</div>
 			{/each}
@@ -217,12 +225,12 @@
 	.form {
 		display: flex;
 		flex-direction: column;
-		gap: 18px;
+		gap: 28px;
 	}
 	.main {
 		display: flex;
 		flex-direction: column;
-		gap: 12px;
+		gap: 14px;
 	}
 	.total {
 		font-size: 34px;
@@ -283,8 +291,26 @@
 		font-weight: 600;
 		cursor: pointer;
 	}
+	.person {
+		flex-direction: column;
+		align-items: stretch;
+		gap: 12px;
+		padding: 14px 16px;
+	}
 	.person.off {
 		opacity: 0.6;
+	}
+	.person-top {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+	}
+	.person-control {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+		padding-left: 40px;
 	}
 	.tick {
 		width: 28px;
@@ -304,8 +330,8 @@
 		border-color: var(--accent);
 	}
 	.mini {
-		width: 96px;
-		height: 40px;
+		width: 128px;
+		height: 44px;
 		text-align: right;
 	}
 	.stepper {
@@ -315,8 +341,8 @@
 		border-radius: 14px;
 	}
 	.stepper button {
-		width: 40px;
-		height: 40px;
+		width: 44px;
+		height: 44px;
 		border: none;
 		background: transparent;
 		font-size: 20px;
@@ -345,8 +371,7 @@
 	.footer {
 		display: flex;
 		flex-direction: column;
-		gap: 12px;
-		position: sticky;
-		bottom: 12px;
+		gap: 16px;
+		margin-top: 8px;
 	}
 </style>
