@@ -25,13 +25,14 @@ type Me struct {
 	PixKeyType string `json:"pix_key_type"`
 	PixKey     string `json:"pix_key"`
 	Onboarded  bool   `json:"onboarded"`
+	EmailNotes bool   `json:"email_notifications"`
 }
 
 func (a *App) loadMe(ctx context.Context, id string) (Me, error) {
 	var m Me
 	var handle, avatar, pixType, pix *string
-	err := a.db.QueryRow(ctx, `SELECT id, email, name, handle, avatar_key, pix_key_type, pix_key FROM users WHERE id = $1`, id).
-		Scan(&m.ID, &m.Email, &m.Name, &handle, &avatar, &pixType, &pix)
+	err := a.db.QueryRow(ctx, `SELECT id, email, name, handle, avatar_key, pix_key_type, pix_key, email_notifications FROM users WHERE id = $1`, id).
+		Scan(&m.ID, &m.Email, &m.Name, &handle, &avatar, &pixType, &pix, &m.EmailNotes)
 	if err != nil {
 		return m, err
 	}
@@ -72,6 +73,7 @@ func (a *App) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 		Handle     *string `json:"handle"`
 		PixKeyType *string `json:"pix_key_type"`
 		PixKey     *string `json:"pix_key"`
+		EmailNotes *bool   `json:"email_notifications"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -111,6 +113,12 @@ func (a *App) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 				writeError(w, 409, "Esse @ já está em uso.")
 				return
 			}
+			a.serverError(w, r, err)
+			return
+		}
+	}
+	if in.EmailNotes != nil {
+		if _, err := a.db.Exec(ctx, `UPDATE users SET email_notifications = $1 WHERE id = $2`, *in.EmailNotes, uid); err != nil {
 			a.serverError(w, r, err)
 			return
 		}

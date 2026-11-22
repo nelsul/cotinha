@@ -39,6 +39,7 @@ export const api = {
 	get: <T>(path: string) => request<T>('GET', path),
 	post: <T>(path: string, body?: unknown) => request<T>('POST', path, body ?? {}),
 	patch: <T>(path: string, body: unknown) => request<T>('PATCH', path, body),
+	put: <T>(path: string, body: unknown) => request<T>('PUT', path, body),
 	del: <T>(path: string) => request<T>('DELETE', path)
 };
 
@@ -54,6 +55,7 @@ export interface Me extends PublicUser {
 	pix_key_type: string;
 	pix_key: string;
 	onboarded: boolean;
+	email_notifications: boolean;
 }
 
 export interface Balance {
@@ -91,6 +93,7 @@ export interface CotinhaSummary {
 	settled: boolean;
 	people: number;
 	photo_url: string;
+	hidden_from_stats: boolean;
 }
 
 export type Relation = 'self' | 'friend' | 'request_sent' | 'request_received' | 'none';

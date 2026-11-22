@@ -187,6 +187,7 @@ type CotinhaSummary struct {
 	MyShare     int64      `json:"my_share_cents"`
 	Outstanding int64      `json:"outstanding_cents"` // creditor: still to receive; debtor: still to pay
 	Settled     bool       `json:"settled"`
+	Hidden      bool       `json:"hidden_from_stats"`
 	People      int        `json:"people"`
 	PhotoURL    string     `json:"photo_url"`
 }
@@ -199,10 +200,11 @@ func (a *App) handleListCotinhas(w http.ResponseWriter, r *http.Request) {
 		SELECT c.id, c.title, c.total_cents, c.created_at, c.creditor_id,
 			(SELECT count(*) FROM cotinha_shares s WHERE s.cotinha_id = c.id),
 			coalesce((SELECT amount_cents FROM cotinha_shares s WHERE s.cotinha_id = c.id AND s.user_id = $1), 0),
-			(SELECT object_key FROM cotinha_photos p WHERE p.cotinha_id = c.id ORDER BY created_at LIMIT 1)
+			(SELECT object_key FROM cotinha_photos p WHERE p.cotinha_id = c.id ORDER BY created_at LIMIT 1),
+			EXISTS (SELECT 1 FROM cotinha_stats_hidden h WHERE h.cotinha_id = c.id AND h.user_id = $1)
 		FROM cotinhas c
 		WHERE c.creditor_id = $1 OR EXISTS (SELECT 1 FROM cotinha_shares s WHERE s.cotinha_id = c.id AND s.user_id = $1)
-		ORDER BY c.created_at DESC LIMIT 200`, me)
+		ORDER BY c.created_at DESC LIMIT 500`, me)
 	if err != nil {
 		a.serverError(w, r, err)
 		return
@@ -216,7 +218,7 @@ func (a *App) handleListCotinhas(w http.ResponseWriter, r *http.Request) {
 	var list []row
 	for rows.Next() {
 		var x row
-		if err := rows.Scan(&x.ID, &x.Title, &x.TotalCents, &x.CreatedAt, &x.creditorID, &x.People, &x.MyShare, &x.photo); err != nil {
+		if err := rows.Scan(&x.ID, &x.Title, &x.TotalCents, &x.CreatedAt, &x.creditorID, &x.People, &x.MyShare, &x.photo, &x.Hidden); err != nil {
 			a.serverError(w, r, err)
 			return
 		}
@@ -407,16 +409,30 @@ func (a *App) handleGetCotinha(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	var hidden bool
+	if err := a.db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM cotinha_stats_hidden WHERE user_id = $1 AND cotinha_id = $2)`, me, id).Scan(&hidden); err != nil {
+		a.serverError(w, r, err)
+		return
+	}
+	hasPayments, err := cotinhaHasPayments(ctx, a.db, id)
+	if err != nil {
+		a.serverError(w, r, err)
+		return
+	}
+
 	writeJSON(w, 200, map[string]any{
-		"cotinha":        c,
-		"creditor":       creditor,
-		"shares":         shares,
-		"expected_cents": expected,
-		"received_cents": received,
-		"pending_cents":  pending,
-		"settled":        received == expected,
-		"photos":         photos,
-		"history":        history,
+		"hidden_from_stats": hidden,
+		"can_delete":        creditorID == me && !hasPayments,
+		"has_payments":      hasPayments,
+		"cotinha":           c,
+		"creditor":          creditor,
+		"shares":            shares,
+		"expected_cents":    expected,
+		"received_cents":    received,
+		"pending_cents":     pending,
+		"settled":           received == expected,
+		"photos":            photos,
+		"history":           history,
 	})
 }
 
@@ -497,4 +513,139 @@ func (a *App) handleDeletePhoto(w http.ResponseWriter, r *http.Request) {
 	}
 	a.store.Delete(ctx, key)
 	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+// cotinhaHasPayments reports whether any payment (pending, confirmed or a
+// compensation) already counts towards the cotinha.
+func cotinhaHasPayments(ctx context.Context, q querier, id string) (bool, error) {
+	var has bool
+	err := q.QueryRow(ctx, `SELECT EXISTS (
+		SELECT 1 FROM payment_allocations pa JOIN payments p ON p.id = pa.payment_id
+		WHERE pa.cotinha_id = $1 AND p.status IN ('pending', 'confirmed'))`, id).Scan(&has)
+	return has, err
+}
+
+// handleDeleteCotinha lets the creator delete a cotinha nobody has paid yet.
+// Participants are told; the photos are removed from storage.
+func (a *App) handleDeleteCotinha(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	ctx := r.Context()
+	me := currentUser(ctx)
+	tx, err := a.db.Begin(ctx)
+	if err != nil {
+		a.serverError(w, r, err)
+		return
+	}
+	defer tx.Rollback(ctx)
+	var creditor, title string
+	err = tx.QueryRow(ctx, `SELECT creditor_id, title FROM cotinhas WHERE id = $1 FOR UPDATE`, id).Scan(&creditor, &title)
+	if isNoRows(err) {
+		writeError(w, 404, "Cotinha não encontrada.")
+		return
+	} else if err != nil {
+		a.serverError(w, r, err)
+		return
+	}
+	if creditor != me {
+		writeError(w, 403, "Só quem criou a cotinha pode apagá-la.")
+		return
+	}
+	if has, err := cotinhaHasPayments(ctx, tx, id); err != nil {
+		a.serverError(w, r, err)
+		return
+	} else if has {
+		writeError(w, 409, "Essa cotinha já tem pagamentos registrados e não pode ser apagada.")
+		return
+	}
+	rows, err := tx.Query(ctx, `SELECT user_id, amount_cents FROM cotinha_shares WHERE cotinha_id = $1 AND user_id <> $2`, id, me)
+	if err != nil {
+		a.serverError(w, r, err)
+		return
+	}
+	type part struct {
+		user   string
+		amount int64
+	}
+	var parts []part
+	for rows.Next() {
+		var p part
+		if err := rows.Scan(&p.user, &p.amount); err != nil {
+			rows.Close()
+			a.serverError(w, r, err)
+			return
+		}
+		parts = append(parts, p)
+	}
+	rows.Close()
+	var keys []string
+	krows, err := tx.Query(ctx, `SELECT object_key FROM cotinha_photos WHERE cotinha_id = $1`, id)
+	if err != nil {
+		a.serverError(w, r, err)
+		return
+	}
+	for krows.Next() {
+		var k string
+		if err := krows.Scan(&k); err != nil {
+			krows.Close()
+			a.serverError(w, r, err)
+			return
+		}
+		keys = append(keys, k)
+	}
+	krows.Close()
+	if _, err := tx.Exec(ctx, `DELETE FROM cotinhas WHERE id = $1`, id); err != nil {
+		a.serverError(w, r, err)
+		return
+	}
+	for _, p := range parts {
+		if err := notifyTitled(ctx, tx, p.user, "cotinha_deleted", me, "", "", p.amount, title); err != nil {
+			a.serverError(w, r, err)
+			return
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		a.serverError(w, r, err)
+		return
+	}
+	for _, k := range keys {
+		a.store.Delete(ctx, k)
+	}
+	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+// handleStatsHidden sets whether a cotinha counts in the current user's statistics.
+func (a *App) handleStatsHidden(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	var in struct {
+		Hidden bool `json:"hidden"`
+	}
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	ctx := r.Context()
+	me := currentUser(ctx)
+	if ok, err := a.canSeeCotinha(ctx, id, me); err != nil {
+		a.serverError(w, r, err)
+		return
+	} else if !ok {
+		writeError(w, 404, "Cotinha não encontrada.")
+		return
+	}
+	var err error
+	if in.Hidden {
+		_, err = a.db.Exec(ctx, `INSERT INTO cotinha_stats_hidden (user_id, cotinha_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, me, id)
+	} else {
+		_, err = a.db.Exec(ctx, `DELETE FROM cotinha_stats_hidden WHERE user_id = $1 AND cotinha_id = $2`, me, id)
+	}
+	if err != nil {
+		a.serverError(w, r, err)
+		return
+	}
+	writeJSON(w, 200, map[string]bool{"hidden": in.Hidden})
 }

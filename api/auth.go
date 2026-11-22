@@ -79,6 +79,7 @@ func (a *App) handleRequestCode(w http.ResponseWriter, r *http.Request) {
 		a.serverError(w, r, fmt.Errorf("send code: %w", err))
 		return
 	}
+	a.logEmail(ctx, "login")
 	writeJSON(w, 200, map[string]bool{"sent": true})
 }
 

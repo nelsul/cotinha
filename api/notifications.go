@@ -9,6 +9,11 @@ import (
 // notify stores a notification for user. Pass empty strings for the ids that
 // don't apply. It runs inside the caller's transaction when given one.
 func notify(ctx context.Context, q querier, user, kind, actor, cotinha, payment string, amount int64) error {
+	return notifyTitled(ctx, q, user, kind, actor, cotinha, payment, amount, "")
+}
+
+// notifyTitled also stores a title, for events whose cotinha no longer exists.
+func notifyTitled(ctx context.Context, q querier, user, kind, actor, cotinha, payment string, amount int64, title string) error {
 	null := func(s string) *string {
 		if s == "" {
 			return nil
@@ -19,8 +24,8 @@ func notify(ctx context.Context, q querier, user, kind, actor, cotinha, payment 
 	if amount > 0 {
 		cents = &amount
 	}
-	_, err := q.Exec(ctx, `INSERT INTO notifications (user_id, kind, actor_id, cotinha_id, payment_id, amount_cents)
-		VALUES ($1, $2, $3, $4, $5, $6)`, user, kind, null(actor), null(cotinha), null(payment), cents)
+	_, err := q.Exec(ctx, `INSERT INTO notifications (user_id, kind, actor_id, cotinha_id, payment_id, amount_cents, title)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`, user, kind, null(actor), null(cotinha), null(payment), cents, null(title))
 	return err
 }
 
@@ -55,7 +60,7 @@ func (a *App) handleListNotifications(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	me := currentUser(ctx)
 	rows, err := a.db.Query(ctx, `
-		SELECT n.id, n.kind, n.actor_id, n.cotinha_id, coalesce(c.title, ''), n.payment_id,
+		SELECT n.id, n.kind, n.actor_id, n.cotinha_id, coalesce(c.title, n.title, ''), n.payment_id,
 			coalesce(n.amount_cents, 0), n.read_at IS NOT NULL, n.created_at
 		FROM notifications n LEFT JOIN cotinhas c ON c.id = n.cotinha_id
 		WHERE n.user_id = $1 ORDER BY n.created_at DESC LIMIT 60`, me)
