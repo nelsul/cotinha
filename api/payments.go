@@ -155,6 +155,10 @@ func (a *App) handleCompensate(w http.ResponseWriter, r *http.Request) {
 		a.serverError(w, r, err)
 		return
 	}
+	if err := notify(ctx, tx, other, "compensated", me, "", "", amount); err != nil {
+		a.serverError(w, r, err)
+		return
+	}
 	if err := tx.Commit(ctx); err != nil {
 		a.serverError(w, r, err)
 		return
@@ -233,8 +237,13 @@ func (a *App) handleCreatePayment(w http.ResponseWriter, r *http.Request) {
 		fail(400, "O valor é maior do que você deve.")
 		return
 	}
-	id, err := insertPayment(ctx, tx, me, payee, "pix_manual", "pending", nil, receipt, allocate(shares, amount))
+	allocs := allocate(shares, amount)
+	id, err := insertPayment(ctx, tx, me, payee, "pix_manual", "pending", nil, receipt, allocs)
 	if err != nil {
+		a.serverError(w, r, err)
+		return
+	}
+	if err := notify(ctx, tx, payee, "payment_sent", me, allocs[0].CotinhaID, id, amount); err != nil {
 		a.serverError(w, r, err)
 		return
 	}
@@ -371,6 +380,19 @@ func (a *App) decidePayment(w http.ResponseWriter, r *http.Request, status strin
 			return
 		}
 		writeError(w, 409, "Esse pagamento já foi resolvido.")
+		return
+	}
+	var payer string
+	var amount int64
+	var cotinha *string
+	if err := a.db.QueryRow(ctx, `SELECT p.payer_id, p.amount_cents,
+		(SELECT cotinha_id FROM payment_allocations WHERE payment_id = p.id LIMIT 1)
+		FROM payments p WHERE p.id = $1`, id).Scan(&payer, &amount, &cotinha); err != nil {
+		a.serverError(w, r, err)
+		return
+	}
+	if err := notify(ctx, a.db, payer, "payment_"+status, currentUser(ctx), deref(cotinha), id, amount); err != nil {
+		a.serverError(w, r, err)
 		return
 	}
 	a.handleGetPayment(w, r)

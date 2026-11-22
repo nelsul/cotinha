@@ -127,11 +127,13 @@
 						<Avatar user={r.user} />
 						<div class="grow"><strong>{r.user.name}</strong><span class="muted small">@{r.user.handle}</span></div>
 					</div>
-					<div class="three">
+					<div class="two">
 						<button class="chip on" onclick={() => act(r, 'accept')}>Aceitar</button>
 						<button class="chip" onclick={() => act(r, 'decline')}>Recusar</button>
-						<button class="chip warn" onclick={() => act(r, 'block')}>Bloquear 24h</button>
 					</div>
+					<button class="block-link" onclick={() => act(r, 'block')}>
+						<Icon name="block" size={16} />Recusar e bloquear pedidos por 24h
+					</button>
 				</div>
 			{/each}
 		</section>
@@ -231,7 +233,7 @@
 	.req {
 		display: flex;
 		flex-direction: column;
-		gap: 10px;
+		gap: 14px;
 		padding: 12px 14px;
 	}
 	.who,
@@ -247,17 +249,28 @@
 		flex-direction: column;
 		gap: 2px;
 	}
-	.three {
+	.two {
 		display: grid;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
-		gap: 8px;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 10px;
 	}
-	.three .chip {
-		height: 40px;
-		border-radius: 20px;
+	.two .chip {
+		height: 44px;
+		border-radius: 22px;
+		font-size: 15px;
 	}
-	.chip.warn {
+	.block-link {
+		align-self: center;
+		border: none;
+		background: none;
 		color: var(--warn);
+		font-size: 14px;
+		font-weight: 600;
+		padding: 8px 4px;
+		min-height: 44px;
+		display: flex;
+		align-items: center;
+		gap: 6px;
 	}
 	.blocked {
 		background: var(--nav);

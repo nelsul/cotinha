@@ -245,6 +245,10 @@ func (a *App) routes() http.Handler {
 			r.Post("/payments/{id}/reject", a.handleRejectPayment)
 
 			r.Get("/stats", a.handleStats)
+
+			r.Get("/notifications", a.handleListNotifications)
+			r.Get("/notifications/unread", a.handleUnreadCount)
+			r.Post("/notifications/read", a.handleReadNotifications)
 		})
 		r.NotFound(func(w http.ResponseWriter, r *http.Request) { writeError(w, 404, "not found") })
 	})

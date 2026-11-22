@@ -4,7 +4,8 @@
 	import QRCode from 'qrcode';
 	import { api, ApiError, type PublicUser } from '$lib/api';
 	import { appendImage, compressImage } from '$lib/image';
-	import { centsToInput, firstName, money, parseMoney } from '$lib/format';
+	import { firstName, money } from '$lib/format';
+	import MoneyInput from '$lib/components/MoneyInput.svelte';
 	import Avatar from '$lib/components/Avatar.svelte';
 	import Header from '$lib/components/Header.svelte';
 	import Icon from '$lib/components/Icon.svelte';
@@ -33,12 +34,12 @@
 	let w = $state<With | null>(null);
 	let error = $state('');
 	let mode = $state<'all' | 'part'>('all');
-	let partText = $state('');
+	let part = $state(0);
 	let pix = $state<{ payload: string; pix_key: string; name: string } | null>(null);
 	let pixError = $state('');
 	let qr = $state('');
 	let copied = $state(false);
-	let receipt = $state<{ file: File; url: string } | null>(null);
+	let receipt = $state<{ file: Blob; name: string; url: string } | null>(null);
 	let busy = $state(false);
 	let compensating = $state(false);
 
@@ -56,7 +57,7 @@
 		if (cotinhaId) return w.i_owe.find((s) => s.cotinha_id === cotinhaId)?.payable_cents ?? 0;
 		return w.i_can_pay_cents;
 	});
-	const amount = $derived(mode === 'all' ? payable : Math.min(parseMoney(partText) ?? 0, payable));
+	const amount = $derived(mode === 'all' ? payable : Math.min(part, payable));
 	const scope = $derived(cotinhaId ? w?.i_owe.find((s) => s.cotinha_id === cotinhaId)?.title : '');
 
 	// Refresh the Pix code whenever the amount changes.
@@ -88,9 +89,13 @@
 		setTimeout(() => (copied = false), 2000);
 	}
 
-	function pickReceipt(e: Event) {
-		const file = (e.currentTarget as HTMLInputElement).files?.[0];
-		if (file) receipt = { file, url: URL.createObjectURL(file) };
+	async function pickReceipt(e: Event) {
+		const input = e.currentTarget as HTMLInputElement;
+		const file = input.files?.[0];
+		input.value = '';
+		if (!file) return;
+		const blob = await compressImage(file);
+		receipt = { file: blob, name: file.name, url: URL.createObjectURL(blob) };
 	}
 
 	async function compensate() {
@@ -114,7 +119,7 @@
 			form.append('payee_id', id!);
 			form.append('amount_cents', String(amount));
 			if (cotinhaId) form.append('cotinha_id', cotinhaId);
-			if (receipt) appendImage(form, await compressImage(receipt.file), 'comprovante');
+			if (receipt) appendImage(form, receipt.file, 'comprovante');
 			const res = await api.post<{ id: string }>('/payments', form);
 			await goto(`/pagamento/${res.id}`, { replaceState: true });
 		} catch (e) {
@@ -163,13 +168,13 @@
 					<button class="amount" class:on={mode === 'all'} onclick={() => (mode = 'all')}>
 						<strong>{money(payable)}</strong><span class="muted small">Tudo</span>
 					</button>
-					<button class="amount" class:on={mode === 'part'} onclick={() => ((mode = 'part'), (partText ||= centsToInput(Math.round(payable / 2))))}>
+					<button class="amount" class:on={mode === 'part'} onclick={() => ((mode = 'part'), (part ||= Math.round(payable / 2)))}>
 						<strong>Pagar parte</strong><span class="muted small">escolha o valor</span>
 					</button>
 				</div>
 				{#if mode === 'part'}
-					<input class="input" inputmode="decimal" aria-label="Valor a pagar" bind:value={partText} />
-					{#if (parseMoney(partText) ?? 0) > payable}<span class="muted">O máximo é {money(payable)}.</span>{/if}
+					<MoneyInput class="input" aria-label="Valor a pagar" bind:cents={part} />
+					{#if part > payable}<span class="muted">O máximo é {money(payable)}.</span>{/if}
 				{/if}
 			</section>
 
@@ -199,7 +204,7 @@
 				{#if receipt}
 					<div class="row">
 						<img src={receipt.url} alt="Comprovante" class="rthumb" />
-						<div class="grow"><strong>{receipt.file.name}</strong><span class="muted small">Anexado</span></div>
+						<div class="grow"><strong>{receipt.name}</strong><span class="muted small">Anexado</span></div>
 						<button class="chip" onclick={() => (receipt = null)}>Trocar</button>
 					</div>
 				{:else}

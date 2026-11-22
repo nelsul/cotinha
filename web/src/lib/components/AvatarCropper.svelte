@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AVATAR_SIZE, encodeCanvas, loadImage } from '$lib/image';
+	import { AVATAR_SIZE, encodeCanvas, loadAnyImage } from '$lib/image';
 	import Icon from './Icon.svelte';
 
 	// Shows the picked photo under a circle: drag to move, pinch or use the slider to zoom,
@@ -70,7 +70,7 @@
 
 	$effect(() => {
 		let cancelled = false;
-		loadImage(file)
+		loadAnyImage(file)
 			.then(async (i) => {
 				if (cancelled) return;
 				original = i;

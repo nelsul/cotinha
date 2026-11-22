@@ -206,9 +206,16 @@ func (a *App) handleSendRequest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 429, "Essa pessoa não está recebendo pedidos seus agora. Tente amanhã.")
 		return
 	}
-	if _, err := a.db.Exec(ctx, `INSERT INTO friend_requests (from_id, to_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, me, to); err != nil {
+	tag, err := a.db.Exec(ctx, `INSERT INTO friend_requests (from_id, to_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, me, to)
+	if err != nil {
 		a.serverError(w, r, err)
 		return
+	}
+	if tag.RowsAffected() > 0 {
+		if err := notify(ctx, a.db, to, "friend_request", me, "", "", 0); err != nil {
+			a.serverError(w, r, err)
+			return
+		}
 	}
 	writeJSON(w, 200, map[string]string{"relation": "request_sent"})
 }
@@ -230,6 +237,9 @@ func (a *App) acceptRequest(r *http.Request, id, me, from string) error {
 	}
 	u1, u2 := orderedPair(me, from)
 	if _, err := tx.Exec(ctx, `INSERT INTO friendships (user_a, user_b) VALUES ($1, $2) ON CONFLICT DO NOTHING`, u1, u2); err != nil {
+		return err
+	}
+	if err := notify(ctx, tx, from, "friend_accepted", me, "", "", 0); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

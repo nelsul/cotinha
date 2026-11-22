@@ -9,6 +9,7 @@
 	let toConfirm = $state<Payment[]>([]);
 	let cotinhas = $state<CotinhaSummary[]>([]);
 	let error = $state('');
+	let unread = $state(0);
 
 	async function load() {
 		try {
@@ -17,6 +18,7 @@
 				api.get<Payment[]>('/payments/to-confirm'),
 				api.get<CotinhaSummary[]>('/cotinhas?status=open')
 			]);
+			unread = (await api.get<{ unread: number }>('/notifications/unread')).unread;
 		} catch (e) {
 			error = (e as Error).message;
 		}
@@ -37,7 +39,13 @@
 	<div class="top">
 		<div class="logo">cotinha<span>.</span></div>
 		{#if session.me}
-			<a href="/perfil" aria-label="Seu perfil"><Avatar user={session.me} size={44} ring /></a>
+			<div class="top-actions">
+				<a href="/notificacoes" class="bell" aria-label={unread ? `Notificações, ${unread} novas` : 'Notificações'}>
+					<Icon name="bell" size={22} />
+					{#if unread}<span class="badge">{unread > 9 ? '9+' : unread}</span>{/if}
+				</a>
+				<a href="/perfil" aria-label="Seu perfil"><Avatar user={session.me} size={44} ring /></a>
+			</div>
 		{/if}
 	</div>
 
@@ -123,8 +131,40 @@
 		align-items: center;
 		justify-content: space-between;
 	}
-	.top a {
+	.top-actions {
 		display: flex;
+		align-items: center;
+		gap: 14px;
+	}
+	.top-actions a {
+		display: flex;
+	}
+	.bell {
+		position: relative;
+		width: 44px;
+		height: 44px;
+		border-radius: 22px;
+		background: var(--surface);
+		color: var(--text);
+		align-items: center;
+		justify-content: center;
+	}
+	.badge {
+		position: absolute;
+		top: -2px;
+		right: -2px;
+		min-width: 20px;
+		height: 20px;
+		padding: 0 5px;
+		border-radius: 10px;
+		background: var(--accent);
+		color: var(--accent-ink);
+		font-size: 12px;
+		font-weight: 800;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		box-shadow: 0 0 0 3px var(--bg);
 	}
 	.logo {
 		font-size: 28px;

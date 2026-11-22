@@ -79,11 +79,13 @@
 	}
 
 	function historyText(h: Detail['history'][number]) {
-		const who = h.payer.id === me.id ? 'Você' : firstName(h.payer.name);
-		if (h.method === 'compensation') return `${who} compensou ${money(h.amount_cents)} com outra dívida`;
-		if (h.status === 'pending') return `${who} marcou ${money(h.amount_cents)} como pago`;
-		if (h.status === 'rejected') return `Pagamento de ${money(h.amount_cents)} de ${who} foi recusado`;
-		return `Pagamento de ${money(h.amount_cents)} de ${who} confirmado`;
+		const mine = h.payer.id === me.id;
+		const who = mine ? 'Você' : firstName(h.payer.name);
+		const amount = money(h.amount_cents);
+		if (h.method === 'compensation') return `${who} compensou ${amount} com outra dívida`;
+		if (h.status === 'pending') return `${who} marcou ${amount} como pago`;
+		if (h.status === 'rejected') return mine ? `Seu pagamento de ${amount} foi recusado` : `Pagamento de ${amount} de ${who} foi recusado`;
+		return mine ? `Seu pagamento de ${amount} foi confirmado` : `Pagamento de ${amount} de ${who} confirmado`;
 	}
 </script>
 
@@ -102,12 +104,12 @@
 			{#each d.photos as p (p.id)}
 				<div class="photo">
 					<button class="open" onclick={() => (viewing = p.url)} aria-label="Ampliar foto"><img src={p.url} alt="" /></button>
-					{#if p.uploaded_by === me.id || isCreditor}
+					{#if isCreditor}
 						<button class="remove" aria-label="Remover foto" onclick={() => removePhoto(p.id)}><Icon name="close" size={14} stroke={3} /></button>
 					{/if}
 				</div>
 			{/each}
-			{#if d.photos.length < 6}
+			{#if isCreditor && d.photos.length < 6}
 				<label class="add-photo">
 					<Icon name="camera" size={22} />
 					{uploading ? 'Enviando…' : 'Foto'}
@@ -149,7 +151,8 @@
 				<div class="row">
 					<Avatar user={s.user} />
 					<div class="grow">
-						<strong>{s.user.id === me.id ? 'Você' : s.user.name} · {money(s.amount_cents)}</strong>
+						<strong class="name">{s.user.id === me.id ? 'Você' : s.user.name}</strong>
+						<span class="share-amount">{money(s.amount_cents)}</span>
 						<span class="muted small">
 							{#if s.is_creditor}Pagou a conta
 							{:else if s.remaining_cents === 0}Quitado
@@ -317,6 +320,15 @@
 		display: flex;
 		flex-direction: column;
 		gap: 10px;
+	}
+	.name {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.share-amount {
+		font-weight: 800;
+		font-size: 15px;
 	}
 	.chip.done {
 		color: var(--accent);
