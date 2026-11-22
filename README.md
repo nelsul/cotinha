@@ -4,6 +4,43 @@ Split bills with friends: shared expenses ("cotinhas") split equally, by amount 
 
 Live at **https://cotinha.nelsul.com**. Dark only, mobile first. The app's interface is in Brazilian Portuguese; code and docs are in English.
 
+<table>
+  <tr>
+    <td><img src="docs/screenshots/inicio.jpg" alt="Início: overall balance, a payment waiting for confirmation and balances with each friend" width="250"></td>
+    <td><img src="docs/screenshots/nova.jpg" alt="Nova cotinha: a bar tab split by weight, each person with their number of beers" width="250"></td>
+    <td><img src="docs/screenshots/cotinha.jpg" alt="A cotinha with its description, progress and who already paid" width="250"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Início</b><br>Your balance and who owes whom</td>
+    <td align="center"><b>Nova cotinha</b><br>Split equally, by amount or by weight</td>
+    <td align="center"><b>Cotinha</b><br>Description, photos and who paid</td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/pagar.jpg" alt="Paying a friend: cancel out mutual debts, then a Pix QR code with the amount" width="250"></td>
+    <td><img src="docs/screenshots/confirmar.jpg" alt="Confirming a payment with the receipt the friend attached" width="250"></td>
+    <td><img src="docs/screenshots/amigos.jpg" alt="Amigos: a friend request and the friends list with balances" width="250"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Pagar</b><br>Compensate mutual debts, pay by Pix</td>
+    <td align="center"><b>Confirmar</b><br>A debt closes only when the receiver confirms</td>
+    <td align="center"><b>Amigos</b><br>Find people by @ or QR code</td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/notificacoes.jpg" alt="Notificações: friend requests and payments to confirm" width="250"></td>
+    <td><img src="docs/screenshots/estatisticas.jpg" alt="Estatísticas: totals and who owes or paid you the most" width="250"></td>
+    <td></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Notificações</b><br>Requests, new cotinhas and payments</td>
+    <td align="center"><b>Estatísticas</b><br>Totals and rankings by period</td>
+    <td></td>
+  </tr>
+</table>
+
+<sub>Screenshots at iPhone size from a local copy with made-up people; the Pix key is fictional.</sub>
+
+Want to help? Read [CONTRIBUTING.md](CONTRIBUTING.md). AI coding agents: [AGENTS.md](AGENTS.md).
+
 ## How it works
 
 - **Login** with a 6-digit code sent by email (no passwords).
