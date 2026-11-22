@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { api, ApiError, type PublicUser } from '$lib/api';
 	import { money, parseMoney } from '$lib/format';
+	import { appendImage, compressImage } from '$lib/image';
 	import { session } from '$lib/session.svelte';
 	import Avatar from '$lib/components/Avatar.svelte';
 	import Header from '$lib/components/Header.svelte';
@@ -94,7 +95,7 @@
 			});
 			for (const p of photos) {
 				const form = new FormData();
-				form.append('file', p.file);
+				appendImage(form, await compressImage(p.file));
 				await api.post(`/cotinhas/${id}/photos`, form).catch(() => {});
 			}
 			await goto(`/cotinha/${id}`, { replaceState: true });

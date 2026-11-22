@@ -3,6 +3,7 @@
 	import { page } from '$app/state';
 	import QRCode from 'qrcode';
 	import { api, ApiError, type PublicUser } from '$lib/api';
+	import { appendImage, compressImage } from '$lib/image';
 	import { centsToInput, firstName, money, parseMoney } from '$lib/format';
 	import Avatar from '$lib/components/Avatar.svelte';
 	import Header from '$lib/components/Header.svelte';
@@ -113,7 +114,7 @@
 			form.append('payee_id', id!);
 			form.append('amount_cents', String(amount));
 			if (cotinhaId) form.append('cotinha_id', cotinhaId);
-			if (receipt) form.append('file', receipt.file);
+			if (receipt) appendImage(form, await compressImage(receipt.file), 'comprovante');
 			const res = await api.post<{ id: string }>('/payments', form);
 			await goto(`/pagamento/${res.id}`, { replaceState: true });
 		} catch (e) {

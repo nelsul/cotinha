@@ -215,6 +215,7 @@ func (a *App) routes() http.Handler {
 			r.Get("/me", a.handleMe)
 			r.Patch("/me", a.handleUpdateMe)
 			r.Post("/me/avatar", a.handleUploadAvatar)
+			r.Get("/handles/available", a.handleHandleAvailable)
 
 			r.Get("/users/search", a.handleSearchUsers)
 			r.Get("/users/by-handle/{handle}", a.handleUserByHandle)

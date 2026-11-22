@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import { api, ApiError, type PublicUser } from '$lib/api';
 	import { firstName, money, shortDate } from '$lib/format';
+	import { appendImage, compressImage } from '$lib/image';
 	import { session } from '$lib/session.svelte';
 	import Avatar from '$lib/components/Avatar.svelte';
 	import Header from '$lib/components/Header.svelte';
@@ -55,7 +56,7 @@
 		uploading = true;
 		try {
 			const form = new FormData();
-			form.append('file', file);
+			appendImage(form, await compressImage(file));
 			await api.post(`/cotinhas/${id}/photos`, form);
 			await load();
 		} catch (err) {

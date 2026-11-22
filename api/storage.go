@@ -56,8 +56,9 @@ func NewStorage(ctx context.Context, cfg Config) (*Storage, error) {
 	return s, nil
 }
 
-// readImage reads the "file" part of a multipart request and checks it is a picture.
-func readImage(w http.ResponseWriter, r *http.Request) ([]byte, string, string, bool) {
+// readImage reads the "file" part of a multipart request, checks it is a picture
+// and shrinks it (longest side at most maxSide) before it is stored.
+func readImage(w http.ResponseWriter, r *http.Request, maxSide int) ([]byte, string, string, bool) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxImageBytes+1<<20)
 	file, _, err := r.FormFile("file")
 	if err != nil {
@@ -79,6 +80,7 @@ func readImage(w http.ResponseWriter, r *http.Request) ([]byte, string, string, 
 		writeError(w, 400, "Formato não suportado. Use JPG, PNG, WEBP ou HEIC.")
 		return nil, "", "", false
 	}
+	data, ctype, ext = optimizeImage(data, ctype, ext, maxSide)
 	return data, ctype, ext, true
 }
 
