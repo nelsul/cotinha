@@ -1,7 +1,10 @@
 <script lang="ts">
 	import { api, ApiError, type Me } from '$lib/api';
 	import { session } from '$lib/session.svelte';
+	import { appendImage } from '$lib/image';
 	import Avatar from '$lib/components/Avatar.svelte';
+	import AvatarCropper from '$lib/components/AvatarCropper.svelte';
+	import HandleField from '$lib/components/HandleField.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import PixKeyFields from '$lib/components/PixKeyFields.svelte';
 
@@ -9,6 +12,8 @@
 	let editing = $state(false);
 	let name = $state('');
 	let handle = $state('');
+	let handleOk = $state(false);
+	let picked = $state<File | null>(null);
 	let kind = $state('cpf');
 	let key = $state('');
 	let busy = $state(false);
@@ -40,17 +45,20 @@
 		}
 	}
 
-	async function upload(e: Event) {
+	function pick(e: Event) {
 		const input = e.currentTarget as HTMLInputElement;
-		const file = input.files?.[0];
+		picked = input.files?.[0] ?? null;
 		input.value = '';
-		if (!file) return;
+	}
+
+	async function upload(blob: Blob) {
 		uploading = true;
 		error = '';
 		try {
 			const form = new FormData();
-			form.append('file', file);
+			appendImage(form, blob, 'perfil');
 			session.me = await api.post<Me>('/me/avatar', form);
+			picked = null;
 		} catch (err) {
 			error = err instanceof ApiError ? err.message : 'Não foi possível enviar a foto.';
 		} finally {
@@ -70,7 +78,7 @@
 			<Avatar user={me} size={112} ring />
 			<label class="cam" aria-label="Trocar foto de perfil">
 				<Icon name="camera" size={20} stroke={2.2} />
-				<input type="file" accept="image/*" class="sr-only" onchange={upload} disabled={uploading} />
+				<input type="file" accept="image/*" class="sr-only" onchange={pick} disabled={uploading} />
 			</label>
 		</div>
 		<strong class="name">{me.name}</strong>
@@ -84,12 +92,9 @@
 				<label for="name">Nome</label>
 				<input id="name" class="input" maxlength="40" required bind:value={name} />
 			</div>
-			<div class="field">
-				<label for="handle">Seu @</label>
-				<input id="handle" class="input" maxlength="20" autocapitalize="none" required bind:value={handle} />
-			</div>
+			<HandleField bind:handle bind:ok={handleOk} />
 			<PixKeyFields bind:kind bind:key />
-			<button class="btn" disabled={busy}>{busy ? 'Salvando…' : 'Salvar'}</button>
+			<button class="btn" disabled={busy || !handleOk}>{busy ? 'Salvando…' : 'Salvar'}</button>
 			<button type="button" class="btn ghost" onclick={() => (editing = false)}>Cancelar</button>
 		</form>
 	{:else}
@@ -115,6 +120,10 @@
 		</section>
 	{/if}
 </main>
+
+{#if picked}
+	<AvatarCropper file={picked} onsave={upload} oncancel={() => (picked = null)} />
+{/if}
 
 <style>
 	.head {

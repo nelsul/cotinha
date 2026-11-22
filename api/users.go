@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"regexp"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type PublicUser struct {
@@ -103,6 +105,12 @@ func (a *App) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if _, err := a.db.Exec(ctx, `UPDATE users SET handle = $1 WHERE id = $2`, h, uid); err != nil {
+			// Two people can pick the same free @ at the same moment; the unique index decides.
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+				writeError(w, 409, "Esse @ já está em uso.")
+				return
+			}
 			a.serverError(w, r, err)
 			return
 		}
@@ -125,8 +133,25 @@ func (a *App) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 	a.handleMe(w, r)
 }
 
+// handleHandleAvailable lets the onboarding and profile forms check a @ while it is typed.
+func (a *App) handleHandleAvailable(w http.ResponseWriter, r *http.Request) {
+	h := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(r.URL.Query().Get("handle")), "@"))
+	if !handleRe.MatchString(h) {
+		writeJSON(w, 200, map[string]any{"handle": h, "valid": false, "available": false})
+		return
+	}
+	var takenBy *string
+	err := a.db.QueryRow(r.Context(), `SELECT id FROM users WHERE handle = $1`, h).Scan(&takenBy)
+	if err != nil && !isNoRows(err) {
+		a.serverError(w, r, err)
+		return
+	}
+	available := takenBy == nil || *takenBy == currentUser(r.Context())
+	writeJSON(w, 200, map[string]any{"handle": h, "valid": true, "available": available})
+}
+
 func (a *App) handleUploadAvatar(w http.ResponseWriter, r *http.Request) {
-	data, ctype, ext, ok := readImage(w, r)
+	data, ctype, ext, ok := readImage(w, r, avatarSide)
 	if !ok {
 		return
 	}

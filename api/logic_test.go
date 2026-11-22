@@ -1,6 +1,11 @@
 package main
 
-import "testing"
+import (
+	"bytes"
+	"image"
+	"image/png"
+	"testing"
+)
 
 func sum(xs []int64) int64 {
 	var t int64
@@ -80,6 +85,31 @@ func contains(s, sub string) bool {
 		}
 	}
 	return false
+}
+
+func TestOptimizeImage(t *testing.T) {
+	// A big, noisy PNG must come out as a JPEG within the size limit.
+	src := image.NewRGBA(image.Rect(0, 0, 3000, 2000))
+	for i := range src.Pix {
+		src.Pix[i] = uint8(i * 7 % 251)
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, src); err != nil {
+		t.Fatal(err)
+	}
+	out, ctype, ext := optimizeImage(buf.Bytes(), "image/png", "png", photoSide)
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(out))
+	if err != nil || ctype != "image/jpeg" || ext != "jpg" || cfg.Width != photoSide || cfg.Height != 1066 {
+		t.Fatalf("got %s %dx%d err=%v", ctype, cfg.Width, cfg.Height, err)
+	}
+	if len(out) >= buf.Len() {
+		t.Fatalf("not smaller: %d >= %d", len(out), buf.Len())
+	}
+	// Something Go can't decode is stored as it is.
+	heic := []byte("\x00\x00\x00\x18ftypheic....")
+	if got, ct, _ := optimizeImage(heic, "image/heic", "heic", photoSide); ct != "image/heic" || len(got) != len(heic) {
+		t.Fatal("undecodable image was changed")
+	}
 }
 
 func TestPixKeys(t *testing.T) {

@@ -3,10 +3,12 @@
 	import { page } from '$app/state';
 	import { api, ApiError, type Me } from '$lib/api';
 	import { session } from '$lib/session.svelte';
+	import HandleField from '$lib/components/HandleField.svelte';
 	import PixKeyFields from '$lib/components/PixKeyFields.svelte';
 
 	let name = $state(session.me?.name ?? '');
 	let handle = $state(session.me?.handle ?? '');
+	let handleOk = $state(false);
 	let kind = $state(session.me?.pix_key_type || 'cpf');
 	let key = $state(session.me?.pix_key ?? '');
 	let busy = $state(false);
@@ -50,26 +52,10 @@
 			<label for="name">Seu nome</label>
 			<input id="name" class="input" autocomplete="name" maxlength="40" required bind:value={name} onblur={suggest} />
 		</div>
-		<div class="field">
-			<label for="handle">Seu @ (é assim que seus amigos te acham)</label>
-			<div class="at">
-				<span>@</span>
-				<input
-					id="handle"
-					class="input"
-					autocapitalize="none"
-					autocomplete="username"
-					maxlength="20"
-					required
-					bind:value={handle}
-					oninput={() => (handle = handle.toLowerCase().replace(/[^a-z0-9._]/g, ''))}
-				/>
-			</div>
-			<span class="muted">De 3 a 20 caracteres: letras, números, ponto ou _.</span>
-		</div>
+		<HandleField bind:handle bind:ok={handleOk} label="Seu @ (é assim que seus amigos te acham)" />
 		<PixKeyFields bind:kind bind:key />
 		{#if error}<div class="error" role="alert">{error}</div>{/if}
-		<button class="btn" disabled={busy}>{busy ? 'Salvando…' : 'Começar'}</button>
+		<button class="btn" disabled={busy || !handleOk}>{busy ? 'Salvando…' : 'Começar'}</button>
 	</form>
 </main>
 
@@ -78,19 +64,5 @@
 		display: flex;
 		flex-direction: column;
 		gap: 16px;
-	}
-	.at {
-		position: relative;
-	}
-	.at span {
-		position: absolute;
-		left: 14px;
-		top: 50%;
-		transform: translateY(-50%);
-		color: var(--muted);
-		font-size: 16px;
-	}
-	.at .input {
-		padding-left: 32px;
 	}
 </style>

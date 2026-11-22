@@ -437,7 +437,7 @@ func (a *App) handleUploadPhoto(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 409, "Cada cotinha pode ter até 6 fotos.")
 		return
 	}
-	data, ctype, ext, ok := readImage(w, r)
+	data, ctype, ext, ok := readImage(w, r, photoSide)
 	if !ok {
 		return
 	}

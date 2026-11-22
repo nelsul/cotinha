@@ -182,7 +182,7 @@ func (a *App) handleCreatePayment(w http.ResponseWriter, r *http.Request) {
 	}
 	var receipt *string
 	if _, _, err := r.FormFile("file"); err == nil {
-		data, ctype, ext, ok := readImage(w, r)
+		data, ctype, ext, ok := readImage(w, r, photoSide)
 		if !ok {
 			return
 		}
